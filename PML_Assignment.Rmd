@@ -1,0 +1,174 @@
+---
+title: "PML Assignment"
+author: "Vijay Gurram"
+date: "24 December 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###Loading the necessary packages
+
+```{r}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+```
+
+## 1. Overview
+
+This document is part of the assignment towards complete Practical Machine Learning course offered by Coursera. Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+## 1. Data download and loading
+
+```{r}
+
+# Download the training set file
+if (!file.exists("./pml-training.csv")) {
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+        "./pml-training.csv")
+}
+# Downloading the test set file
+if (!file.exists("./pml-testing.csv")) {
+    download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+        "./pml-testing.csv")
+}
+# load data into R
+TrainingData <- read.csv("./pml-training.csv", header = TRUE)
+TestingData <- read.csv("./pml-testing.csv", header = TRUE)
+```
+
+## 2. Data analysis and preparation
+```{r}
+# analysing the data
+str(TrainingData)
+
+
+
+# Check for near zero covariats and removing them
+nzvColsTrain <- nearZeroVar(TrainingData)
+if(length(nzvColsTrain) > 0) {
+  TrainingData <- TrainingData[, -nzvColsTrain]
+}
+
+# remove columns with NA
+naDataTrain = colSums(is.na(TrainingData)) == 0
+if(length(naDataTrain) > 0) {
+  TrainingData = TrainingData[, naDataTrain]
+}
+
+nzvColsTest <- nearZeroVar(TestingData)
+if(length(nzvColsTest) > 0) {
+  TestingData <- TestingData[, -nzvColsTest]
+}
+
+# remove columns with NA
+naDataTest = colSums(is.na(TestingData)) == 0
+if(length(naDataTest) > 0) {
+  TestingData = TestingData[, naDataTest]
+}
+
+# Setting the seed to ensure reproduceability
+
+set.seed(12345)
+
+# now seperating the data into train sets and dev sets so we can use to train and tune various algorithms using 70:30 proportion
+inTrain <- createDataPartition(TrainingData$classe, p=0.7, list=FALSE)
+
+trainingSet  <- TrainingData[inTrain,]
+devSet  <- TrainingData[-inTrain,]
+
+dim(trainingSet)
+
+dim (devSet)
+
+dim (TestingData)
+
+```
+```{r echo=FALSE}
+for (i in 1:length(devSet) ) {
+        for(j in 1:length(trainingSet)) {
+        if( length( grep(names(trainingSet[i]), names(devSet)[j]) ) ==1)  {
+            class(devSet[j]) <- class(trainingSet[i])
+        }      
+    }      
+}
+```
+
+## Model Building
+
+We will use the training and dev sets to try on 2 different models (Decision Tree and Random Forest) and see which one gives us the best accuracy and use that model on Test data to predict the result.
+
+### Using the Decision Tree:
+```{r}
+modFitDT <- rpart(classe ~ ., data=trainingSet, method="class")
+
+fancyRpartPlot(modFitDT)
+```
+
+### 1. Predicting using Decision Tree:
+```{r}
+predictDT <- predict(modFitDT, devSet, type="class")
+```
+
+### Using confusion matrix to test the results:
+
+```{r}
+confusionMatrix(predictDT, devSet$classe)
+```
+
+### Using Random Forest:
+
+```{r}
+set.seed(12345)
+conRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRF <- train(classe ~ ., data=trainingSet, method="rf",
+                          trControl=conRF)
+modFitRF$finalModel
+```
+
+### 2. Predicting using Random Forest:
+
+```{r}
+predictRF <- predict(modFitRF, newdata=devSet)
+```
+
+### Using confusion matrix to test the results:
+```{r}
+confusionMatrix(predictRF, devSet$classe)
+
+```
+## Conclusion
+
+### Based on the above predictions between the 2 models, we decided to use the Random Forest model as it has high accuracy
+
+```{r}
+predictTest <- predict(modFitRF, newdata=TestingData)
+
+```
+
+### Now generate the files needed to submit for the assignment
+
+```{r echo=FALSE}
+#TestingData$classe <- predictTest
+```
+```{r echo=TRUE}
+numFiles <- TestingData$classe
+generateFiles = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("PredictCase_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+generateFiles(numFiles)
+```
